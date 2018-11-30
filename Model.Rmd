@@ -23,8 +23,8 @@ library(leaps)
 First, we must begin by loading in the data from the netCDF file format containing the measurements over each month. 
 ```{r init_load}
 # load-in months from data folder (user-specific)
-locations  <- c("../data/matchups_NPP_2018-01.nc", "../data/matchups_NPP_2018-02.nc", 
-               "../data/matchups_NPP_2018-03.nc", "../data/matchups_NPP_2018-04.nc")
+locations  <- c("../data/matchups_NPP_2018-01.nc", "../data/matchups_NPP_2018-02.nc",
+                "../data/matchups_NPP_2018-03.nc","../data/matchups_NPP_2018-04.nc")
 
 # pull in the variables from the files and bind together
 bright_3.7 <- vector("numeric")
@@ -138,7 +138,7 @@ perm <- gtools::permutations( n = 5, r = 2, v = x)
 formula <- list( length = nrow(perm))
 for (index in 1:nrow(perm)) {
   formula[[index]] <- as.formula(c(paste("sst_act~",toString(perm[index,1]),
-                     "+I(",toString(perm[index,1]),"-",toString(perm[index,2]),"):sst_reg",sep="")))
+                     "+I(",toString(perm[index,1]),"-",toString(perm[index,2]),"):sec_theta",sep="")))
 }
 head(formula)
 ```
@@ -173,7 +173,7 @@ Plotting the result for model comparison:
 plot(1:20, cv.results, xlab = "models", ylab = "MSE", main = "MSE results for CV with 5 fold", type = "b")
 ```
 
-The model that has the lowest MSE is with I = 12 and J = 11
+The model that has the lowest MSE is with I = 11 and J = 3.7
 ```{r}
 names(cv.results[which.min(cv.results),])
 mse.model <- cv.results[which.min(cv.results)]
