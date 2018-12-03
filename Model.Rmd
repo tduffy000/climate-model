@@ -109,14 +109,44 @@ length(test_mask)/nrow(df)
 ### Part 1
 
 ```{r}
-df_task_1 = data.frame(df$bright_3.7, df$bright_4, df$bright_8.6, df$bright_11, df$bright_12, df$sst_act)
-names(df_task_1) <- c("BT_M12","BT_M13","BT_M14","BT_M15","BT_M16","sst_insitu")
+x    <- c('bright_3.7','bright_4','bright_8.6','bright_11','bright_12')
+perm <- gtools::permutations(n = 5, r = 2, v = x)
 
-leaps <- regsubsets(sst_insitu ~ ., data = df_task_1[train_mask,], nbest = 2, method = "exhaustive")
-summary(leaps)
+# Generating all possible linear formula with pair of I and J (20 formula total)
+formula <- list(length = nrow(perm))
+for (index in 1:nrow(perm)) {
+  formula[[index]] <- as.formula(paste("sst_act~",toString(perm[index,1]),
+                     "+I(",toString(perm[index,1]),"-",toString(perm[index,2]),")",sep=""))
+}
+head(formula)
+```
 
-plot(leaps, scale = "adjr2")
-rm(df_task_1)
+```{r}
+nfolds      <- 5
+fold.labels <- sample(rep(1:nfolds, length = floor(nrow(df)) * TEST_SIZE), replace = F)
+
+# Setting up MSE matrix with formula as column names and n-fold as row label
+mse.models           <- matrix(NA, nrow = nfolds, ncol = nrow(perm))
+colnames(mse.models) <- as.character(formula)
+
+# Running CV:
+for (fold in 1:nfolds) {
+  test.rows       <- setdiff(which(fold.labels == fold), train_mask)
+  for (form in formula) {
+    current.model <- lm(formula = form, data = df[test.rows,])
+    predictions   <- predict(current.model, newdata = df[test_mask,])
+    mse.models[fold, as.character(c(form))] <- mean((df[test_mask,]$sst_act - predictions)^2)
+  }
+}
+rm(current.model, predictions)
+
+# CV results:
+cv.results <- as.matrix(colMeans(mse.models))
+cv.results
+```
+
+```{r}
+plot(1:20, cv.results, xlab = "models", ylab = "MSE", main = "MSE results for CV with 5 fold", type = "b")
 ```
 
 ### Part 2
