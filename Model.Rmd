@@ -1,6 +1,6 @@
 ---
 title: "Project_3_SST"
-output: html_document
+output: pdf_document
 author:
 - Tony Hoang
 - Carlos Martinez
@@ -16,6 +16,9 @@ library(MASS)
 library(biglm)
 library(gtools)
 library(leaps)
+library(caret)
+library(dplyr)
+library(ggplot2)
 ```
 
 ### Data Input
@@ -52,11 +55,11 @@ for( loc in locations ) {
 }
 
 # create data frame
-df    <- data.frame(bright_3.7 = bright_3.7, bright_4 = bright_4, bright_8.6 = bright_8.6, bright_11 = bright_11,
+df        <- data.frame(bright_3.7 = bright_3.7, bright_4 = bright_4, bright_8.6 = bright_8.6, bright_11 = bright_11,
                     bright_12 = bright_12, sec_theta = sec_theta, sst_ref = sst_ref, sst_reg = sst_reg,
                     sst_act = sst_act, sza = sza)
 # indicator of whether it's day time
-df$is_day   <- as.integer(df$sza < 95)
+df$is_day <- as.integer(df$sza < 95)
 
 # clean out memory by removing all the vectors from this step
 rm(open_file, bright_3.7, bright_4, bright_8.6, bright_11, bright_12, sec_theta, sst_ref, sst_reg, sst_act, sza)
@@ -108,6 +111,8 @@ length(test_mask)/nrow(df)
 
 ### Part 1
 
+<< DISCUSSION >>
+
 ```{r}
 x    <- c('bright_3.7','bright_4','bright_8.6','bright_11','bright_12')
 perm <- gtools::permutations(n = 5, r = 2, v = x)
@@ -115,8 +120,8 @@ perm <- gtools::permutations(n = 5, r = 2, v = x)
 # Generating all possible linear formula with pair of I and J (20 formula total)
 formula <- list(length = nrow(perm))
 for (index in 1:nrow(perm)) {
-  formula[[index]] <- as.formula(paste("sst_act~",toString(perm[index,1]),
-                     "+I(",toString(perm[index,1]),"-",toString(perm[index,2]),")",sep=""))
+  formula[[index]] <- as.formula(paste("sst_act~", toString(perm[index,1]),
+                     "+I(", toString(perm[index,1]),"-", toString(perm[index,2]), ")", sep = ""))
 }
 head(formula)
 ```
@@ -126,8 +131,8 @@ nfolds      <- 5
 fold.labels <- sample(rep(1:nfolds, length = floor(nrow(df)) * TEST_SIZE), replace = F)
 
 # Setting up MSE matrix with formula as column names and n-fold as row label
-mse.models           <- matrix(NA, nrow = nfolds, ncol = nrow(perm))
-colnames(mse.models) <- as.character(formula)
+rmse.models           <- matrix(NA, nrow = nfolds, ncol = nrow(perm))
+colnames(rmse.models) <- as.character(formula)
 
 # Running CV:
 for (fold in 1:nfolds) {
@@ -135,18 +140,18 @@ for (fold in 1:nfolds) {
   for (form in formula) {
     current.model <- lm(formula = form, data = df[test.rows,])
     predictions   <- predict(current.model, newdata = df[test_mask,])
-    mse.models[fold, as.character(c(form))] <- mean((df[test_mask,]$sst_act - predictions)^2)
+    rmse.models[fold, as.character(c(form))] <- sqrt(mean((df[test_mask,]$sst_act - predictions)^2))
   }
 }
 rm(current.model, predictions)
 
 # CV results:
-cv.results <- as.matrix(colMeans(mse.models))
+cv.results <- as.matrix(colMeans(rmse.models))
 cv.results
 ```
 
 ```{r}
-plot(1:20, cv.results, xlab = "models", ylab = "MSE", main = "MSE results for CV with 5 fold", type = "b")
+plot(1:20, cv.results, xlab = "models", ylab = "RMSE", main = "RMSE results for CV with 5 fold", type = "b")
 ```
 
 ### Part 2
@@ -157,18 +162,18 @@ $$
 T_S=b_0+b_1T_{\lambda_i}+b_2(T_{\lambda_i}-T_{\lambda_j})T_{ref}+b_3(T_{\lambda_i}-T_{\lambda_j})(\sec\theta-1)
 $$
 
-Here, we must find the best channels $T_{\lambda_i}$ and $T_{\lambda_j}$ which is possible to do by exhaustive search just the small search space. Then, we can pick the best model by investigating the mean squared error and performance on the outstanding test set.
+Here, we must find the best channels $T_{\lambda_i}$ and $T_{\lambda_j}$ which is possible to do by exhaustive search just the small search space. Then, we can pick the best model by investigating the root mean squared error and performance on the outstanding test set.
 
 Setting up all possible pairs of I and J for the model. There are 20 possible combinations
 ```{r}
-x <- c('bright_3.7','bright_4','bright_8.6','bright_11','bright_12')
+x    <- c('bright_3.7','bright_4','bright_8.6','bright_11','bright_12')
 perm <- gtools::permutations( n = 5, r = 2, v = x)
 
 #Generating all possible linear formula with pair of I and J (20 formula total)
-formula <- list( length = nrow(perm))
+formula <- list(length = nrow(perm))
 for (index in 1:nrow(perm)) {
-  formula[[index]] <- as.formula(c(paste("sst_act~",toString(perm[index,1]),
-                     "+I(",toString(perm[index,1]),"-",toString(perm[index,2]),"):sec_theta",sep="")))
+  formula[[index]] <- as.formula(c(paste("sst_act~", toString(perm[index,1]),
+                     "+I(", toString(perm[index,1]),"-", toString(perm[index,2]),"):sec_theta", sep = "")))
 }
 head(formula)
 ```
@@ -178,9 +183,9 @@ Setting up n-fold Cross-Validation:
 nfolds <- 5
 fold.labels <- sample(rep(1:nfolds, length = floor(nrow(df)) * TEST_SIZE), replace = F)
 
-#Setting up MSE matrix with formula as column names and n-fold as row label
-mse.models <- matrix(NA, nrow = nfolds, ncol = nrow(perm))
-colnames(mse.models) <- as.character(formula)
+#Setting up RMSE matrix with formula as column names and n-fold as row label
+rmse.models <- matrix(NA, nrow = nfolds, ncol = nrow(perm))
+colnames(rmse.models) <- as.character(formula)
 
 #Running CV:
 for (fold in 1:nfolds) {
@@ -188,35 +193,35 @@ for (fold in 1:nfolds) {
   for (form in formula) {
     current.model <- lm(formula = form, data = df[test.rows,])
     predictions <- predict(current.model, newdata = df[test_mask,])
-    mse.models[fold, as.character(c(form))] <- mean((df[test_mask,]$sst_act - predictions)^2)
+    rmse.models[fold, as.character(c(form))] <- sqrt(mean((df[test_mask,]$sst_act - predictions)^2))
   }
 }
 rm(current.model, predictions)
 
 #CV results:
-cv.results <- as.matrix(colMeans(mse.models))
+cv.results <- as.matrix(colMeans(rmse.models))
 cv.results
 ```
 
 Plotting the result for model comparison:
 ```{r}
-plot(1:20, cv.results, xlab = "models", ylab = "MSE", main = "MSE results for CV with 5 fold", type = "b")
+plot(1:20, cv.results, xlab = "models", ylab = "RMSE", main = "RMSE results for CV with 5 fold", type = "b")
 ```
 
-The model that has the lowest MSE is with I = 11 and J = 3.7
+The model that has the lowest RMSE is with I = 11 and J = 8.6
 ```{r}
 names(cv.results[which.min(cv.results),])
-mse.model <- cv.results[which.min(cv.results)]
-mse.model
+rmse.model <- cv.results[which.min(cv.results)]
+rmse.model
 ```
 
-Checking the performance of the operational model, measured by MSE:
+Checking the performance of the operational model, measured by RMSE:
 ```{r}
-mse.Top = mean((df$sst_reg - df$sst_act)^2)
-mse.Top 
+rmse.Top <- sqrt(mean((df$sst_reg - df$sst_act)^2))
+rmse.Top 
 ```
 
-The MSE of the operational model is much lower than the selected model. Therefore, the selected model is not performing as well.
+The RMSE of the operational model is much lower than the selected model. Therefore, the selected model is not performing as well.
 
 ### Part 3
 
@@ -244,7 +249,7 @@ To account for the order of each variable used, it is convenient to estimate the
 
 ```{r Data Preparation}
 # permutation of all possible variables combination for the model
-x     <- c('bright_3.7', 'bright_4', 'bright_8.6', 'bright_11', 'bright_12')
+x     <- c("bright_3.7", "bright_4", "bright_8.6", "bright_11", "bright_12")
 p     <- 5
 k     <- 2
 permu <- data.frame(gtools::permutations(n = p, r = k, v = x))
@@ -265,7 +270,7 @@ To select the best model, the goal is to identify the model with maximum adjuste
 ```{r Model Selection}
 # Storage lists set up
 adj_rs <- vector("numeric")
-os_err <- vector("numeric")
+os_rmse <- vector("numeric")
 
 # loop through permutations of model
 for (index in 1:nrow(permu)) {
@@ -274,15 +279,38 @@ for (index in 1:nrow(permu)) {
   model               <- lm(formula = formula, data = df[train_mask,])
   prediction          <- predict(model, df[test_mask,], type = "response")
   adj_rs[[index]]     <- summary(model)$adj.r.squared
-  os_err[[index]]     <- mean( (df[test_mask,]$sst_act - prediction)^2 )
+  os_rmse[[index]]    <- sqrt(mean( (df[test_mask,]$sst_act - prediction)^2 ))
 }
 rm(model, prediction) # memory management
-
-dff <- data.frame(permutations = permu, adjusted_R2 = adj_rs, OS_error = os_err)
-mse.Top; dff
+  
+dff <- data.frame(permutations = permu, adjusted_R2 = adj_rs, OS_rmse = os_rmse)
+dff
 ```
 
-Based on the results, it can be concluded all models provide the same accuracy of prediction. Note that the adjusted $R^{2}$ for each of our model is extremetly close to one.
+```{r plot_1}
+plot(dff$adjusted_R2, type = "p", ylab = "Adj. R2", main = "Variables Selection", col = "blue")
+par(new = TRUE)
+plot(dff$OS_rmse, type = "p", xaxt = "n", yaxt = "n", ylab = "", xlab = "", col = "red", lty = 2)
+axis(side = 4)
+mtext("RMSE", side = 4)
+legend("left", c("Adj R2", "RMSE"), col = c("blue", "red"), lty = c(1,2))
+axis(side = 1, at = seq(1,20))
+grid(21)
+```
+
+```{r plot_2}
+ddff <- dff %>% filter(dff$adjusted_R2 > 0.999, dff$OS_rmse < 0.056)
+plot(dff$adjusted_R2, type = "p", ylab = "Adj. R2", main = "Variables Selection", col = "blue")
+par(new = TRUE)
+plot(dff$OS_rmse, type = "p", xaxt = "n", yaxt = "n", ylab = "", xlab = "", col = "red", lty = 2)
+axis(side = 4)
+mtext("RMSE", side = 4)
+legend("right", c("Adj R2", "RMSE"), col = c("blue", "red"), lty = c(1,2))
+axis(side = 1, at = seq(1,8))
+grid(20)
+```
+
+Based on the results, it can be concluded all models provide the same accuracy of prediction. However, after careful analysis, denoting the highest adjusted $R^2$ and lowest $RMSE$ the best variable pairs correspond to model number 11, which is $i=T_{3.7}$ and $j=T_{r}$.
 
 ### Part 4
 Adding further variables and segmenting the model based on whether it's day or night using the solar zenith angel ```sza``` to threshold, we can enrich our model which then requires the estimation of 14 parameters.
@@ -359,6 +387,11 @@ Now, we can fit both our LASSO and Ridge models on our training set and then mak
 fit_lasso <- glmnet::glmnet(X_train, y_train, alpha = 1)
 fit_ridge <- glmnet::glmnet(X_train, y_train, alpha = 0)
 rm(X_train, y_train) # memory management
+
+list( 
+  min_lambda_lasso_model = coef(fit_lasso, s = min(s = min(fit_lasso$lambda))),
+  min_lambda_ridge_model = coef(fit_ridge, s = min(s = min(fit_ridge$lambda)))
+)
 ```
 
 ```{r pred}
@@ -380,16 +413,17 @@ $$
 
 where $y$ is the actual value and $\hat{y}$ is the corresponding model predicted value.
 
-```{r error}
+```{r error_fun}
 rmse <- function(y_act, y_pred) {
   return( sqrt( length(y_pred)^-1 * sum((y_pred - y_act)^2) ))
 }
 
-# add normalized function
 nrmse <- function(y_act, y_pred) {
   return( rmse(y_act, y_pred) / mean(y_act) )
 }
+```
 
+```{r lasso_ridge_error}
 error_list <- list(
   base_rmse = rmse(df$sst_act[test_mask], df$sst_reg[test_mask]),
   lasso_rmse = rmse(df$sst_act[test_mask], predict_df$y_lasso),
@@ -401,14 +435,7 @@ error_list <- list(
 error_list
 ```
 
-What do the solution pathways for both versions look like?
-
-```{r model_vis}
-plot(fit_lasso)
-plot(fit_ridge)
-```
-
-What about across the lambda parameters?
+What coefficients are pronounced as we tune our lambda hyperparameter?
 
 ```{r lambda}
 plot(fit_lasso, xvar = "lambda")
@@ -427,7 +454,7 @@ hist(predict_df$y_lasso - predict_df$y_actual, main = "LASSO Regression Residual
 In both cases, they appear to be relatively normal, which should provide us with further confidence that our model is justifiable. 
 
 ### Part 5 
-Returning to our model that segments depending on time of day from Part 4, perhaps the usage of forward or backward selection would perform just as well, or better. The forward selection process begins with a null and then iteratively adds a variable that maximizes the criteria in a step-wise fashion (the backward selection beginning with the full model and going in reverse). The two criterion used here will be the Akaike Information Criterion (AIC) and the Bayesian Information Criteria (BIC).
+Returning to our model that segments depending on time of day from Part 4, perhaps the usage of forward or backward selection would perform just as well, or better. The forward selection process begins with a null model and then iteratively adds variables which maximizes the criteria in a step-wise fashion (the backward selection beginning with the full model and going in reverse). The criterion used here will be the Akaike Information Criterion (AIC), the Bayesian Information Criteria (BIC), and Mallow's $C_p$.
 
 In the case of AIC we are fitting to minimize the following:
 
@@ -443,37 +470,91 @@ $$
 
 where $n$ is the number of observations.
 
-In order to perform the following procedures in an environment with limited storage resources, we'll have to subset the original data significantly given that ```R``` tends to store all of its objects in memory. Even only using 0.05% of our data will still leave us with 181,171 observations, which should be more than enough for our purposes.
+Finally, Mallow's $C_p$ is defined as
 
-Let's fit our models, by first fitting the full model (which is required by ```step()```:
+$$
+C_p = \frac{SSE_p}{MSE} - n + 2p
+$$
 
-```{r full_fit}
-full_lm     <- lm(form, data = df[train_mask,])
-summary(full_lm)
+where $SSE_p$ is the error sum of squares of the sub-model with $p$ predictors, $n$ is the sample size, and $S^2$ is the residual mean square $MSE$ on the complete set of $k$ predictors. 
+
+Now, we can fit our model once again using the ```leaps``` library. The summary provided by this function will show both BIC and Mallow's $C_p$ statistic for each iteration in the model. We can also calculate the in-sample RMSE from the metrics as RSS is provided.
+
+```{r backward_selection}
+step_lm <- leaps::regsubsets(form, data = df[train_mask,], method = "backward", nvmax = 12)
+plot(step_lm)
 ```
+
+```{r backward_int}
+step_adj_r2 <- summary(step_lm)$adjr2
+step_bic    <- summary(step_lm)$bic
+step_cp     <- summary(step_lm)$cp
+
+step_results <- data.frame(model_size = 1:12, bic = step_bic, mallow_cp = step_cp, adj_r2 = step_adj_r2, 
+                           rmse = sqrt((nrow(df[train_mask,]))^-1 * summary(step_lm)$rss))
+step_results
+```
+
+```{r}
+ggplot2::ggplot(step_results, aes(x = model_size)) + 
+  geom_line(aes(y = bic), col = 4) +
+  labs(title = "BIC over Increasing Model Size in Backward Selection", 
+       x = "Model Size (excluding Intercept)", y = "BIC")
+```
+
+Finally, we can investigate the best model, but it should be noted that here each step is statistically significant enough that if we were using automated model selection based on any of the above criteria we would likely end up with the full model containing all 12 variables. Here, both the 11 and 12 variable models achieve the same BIC score. 
+
+```{r}
+# according to BIC metric what's our best model?
+best_bic <- which.min(summary(step_lm)$bic)
+
+# what are the coefficients of this model (#11)?
+coef(step_lm, best_bic)
+```
+
+### Part 6
+
+Using the object we formed in Part 5, we can investigate how the model at each step would perform on our outstanding test set that constitutes just over 9% of the overall dataset.
 
 ```{r stepwise}
-fit_forward  <- MASS::stepAIC(full_lm, direction = "forward")
-fit_backward <- MASS::stepAIC(full_lm, direction = "backward")
+step_os_rmse <- vector("numeric", length = 12)
+X_test       <- model.matrix(form, data = df[test_mask,])
+
+for(n_var in 1:12) {
+  coef_n              <- coef(step_lm, n_var)
+  pred_n              <- as.vector(X_test[,names(coef_n)] %*% coef_n)
+  step_os_rmse[n_var] <- rmse(df$sst_act[test_mask], pred_n) 
+}
+rm(X_test, step_lm)
+
+data.frame(model_size = 1:12, os_rmse = step_os_rmse)
 ```
 
-```{r anova}
-fit_forward$anova; fit_backward$anova
+Our results in Part 5 indicated that either 11 or 12 variables would be the best performing models. These results seem to confirm that, our error slightly decreases as we add more terms throughout our stepwise procedure. Seemingly, we are not paying a penalty for additional model complexity. Of course, 12 variables is still a rather small number in comparison to the enormous amount of observations available to us.
+
+### Part 7
+
+Given that we do not have a sample size problem, which is a situation we'd prefer to use bootstrapping, we can consider the methodology of k-fold cross-validation again. We have shown its robustness in both Part 2 and 3 before. The idea of cross-validation is that of training on one partition of our data and validating the model on a separate partition. The $k$ in $k$-fold specifies the number of partitions that our data is split up into for these purposes.
+
+```{r cv_stepwise}
+# we're including cross-validation so can concatenate train & test masks
+train_control <- caret::trainControl(method = "cv", number = 5)
+step_model    <- caret::train(form, data = df[c(train_mask, test_mask),], method = "leapBackward", 
+                              tuneGrid = data.frame(nvmax = 1:12), trControl = train_control)
+step_model$results
 ```
 
-And we can now compare them to our performance using the LASSO and Ridge results from Part 4.
-
-```{r stepwise_performance}
-# predict step-wise on test set
-y_forward  <- predict(fit_forward, df[test_mask,], type = "response")
-y_backward <- predict(fit_backward, df[test_mask,], type = "response")
-
-list(
-  forward_rmse = rmse(df[test_mask,]$sst_act, y_forward),
-  backward_rmse = rmse(df[test_mask,]$sst_act, y_backward),
-  forward_nrmse = nrmse(df[test_mask,]$sst_act, y_forward),
-  backward_rmse = nrmse(df[test_mask,]$sst_act, y_backward)
-)
+```{r cv_stepwise_plot}
+# train set error
+plot(step_model)
 ```
 
-So, this procedure generates a model that is more accurate than those determined by the LASSO & Ridge procedures (though again fit on a much smaller subset of data). We did not test the error on the entire dataset, which may explain the robust performance. That said, it appears to approximate the error of the current model, perhaps performing slightly better. It should be noted using either forward or backward selection does not remove any of the variables from the fully enriched model form we began with.
+```{r}
+print(step_model$bestTune)
+```
+
+```{r cv_step_predict}
+coef(step_model$finalModel, 12)
+```
+
+So, this procedure generates a model that is more accurate than those determined by the LASSO & Ridge procedures (though again fit on a much smaller subset of data). We did not test the error on the entire dataset, which may explain the robust performance. That said, it appears to approximate the error of the current model, perhaps performing slightly better. It should be noted using either forward or backward selection does not remove any of the variables from the fully enriched model form we began with. This result is inline with what we found in Part 6. 
